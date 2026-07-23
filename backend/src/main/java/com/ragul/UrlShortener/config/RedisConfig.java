@@ -21,14 +21,15 @@ public class RedisConfig {
         redisTemplate.setConnectionFactory(connectionFactory);
 
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
-        GenericJacksonJsonRedisSerializer genericJacksonJsonRedisSerializer =
+
+        GenericJacksonJsonRedisSerializer jsonSerializer =
                 new GenericJacksonJsonRedisSerializer(objectMapper);
 
         redisTemplate.setKeySerializer(stringSerializer);
         redisTemplate.setHashKeySerializer(stringSerializer);
 
-        redisTemplate.setValueSerializer(genericJacksonJsonRedisSerializer);
-        redisTemplate.setHashValueSerializer(genericJacksonJsonRedisSerializer);
+        redisTemplate.setValueSerializer(jsonSerializer);
+        redisTemplate.setHashValueSerializer(jsonSerializer);
 
         redisTemplate.afterPropertiesSet();
 
