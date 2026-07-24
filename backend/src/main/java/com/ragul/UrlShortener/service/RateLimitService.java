@@ -19,16 +19,17 @@ public class RateLimitService {
 
     private final RedisTemplate<String, Object> redisTemplate;
 
-    @Value("${url-shortener.rate-limit.request-per-minute}")
+    @Value("${url-shortener.rate-limit.requests-per-minute}")
     private int requestPerMinute;
 
-    @Value("${url-shortener.rate-limit.request-per-hour}")
+    @Value("${url-shortener.rate-limit.requests-per-hour}")
     private int requestPerHour;
 
     private static final String REDIS_KEY_PREFIX = "ratelimit:";
 
     private final ConcurrentHashMap<String, RateLimitData> map = new ConcurrentHashMap<>();
 
+    // to check whether a client(IP address) is allowed to make a request at a current moment
     public boolean isAllowed(String clientIp) {
         String redisKey = REDIS_KEY_PREFIX + clientIp;
 
@@ -36,6 +37,7 @@ public class RateLimitService {
 
         RateLimitData rateLimitData = getRateLimitDataFromRedis(redisKey);
 
+        // new IP (no data yet)
         if(rateLimitData == null){
             rateLimitData = map.computeIfAbsent(redisKey, k -> RateLimitData.builder()
                     .hourCount(0)
@@ -45,6 +47,7 @@ public class RateLimitService {
                     .build());
         }
 
+        // for 1 min client can give only 2 requests
         if(isWithinMinuteWindow(rateLimitData, currentTime)){
             if(rateLimitData.getMinuteCount() >= requestPerMinute){
                 log.warn("Minute limit exceeded for {}", clientIp);
@@ -56,6 +59,7 @@ public class RateLimitService {
             rateLimitData.setMinuteWindowStart(currentTime);
         }
 
+        // for 1 hour client can give only 10 requests
         if(isWithinHourWindow(rateLimitData, currentTime)){
             if(rateLimitData.getHourCount() >= requestPerHour){
                 log.warn("Hour limit exceeded for {}", clientIp);
@@ -73,7 +77,6 @@ public class RateLimitService {
         saveRateLimitDataToRedis(redisKey, rateLimitData);
 
         return true;
-
     }
 
     private boolean isWithinHourWindow(RateLimitData rateLimitData, LocalDateTime currentTime) {

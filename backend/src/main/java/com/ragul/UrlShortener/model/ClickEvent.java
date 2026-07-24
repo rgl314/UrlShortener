@@ -11,10 +11,10 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class ClickEvent {
 
-    private LocalDateTime timeStamp;
+    private LocalDateTime timestamp;
     private String ipAddress;
     private String userAgent;  // which browser it occurred
-    private String referrer;   // where it came from
+    private String referer;   // where it came from
     private String country;
     private String city;
 

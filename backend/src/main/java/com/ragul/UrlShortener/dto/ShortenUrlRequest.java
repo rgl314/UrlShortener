@@ -1,5 +1,6 @@
 package com.ragul.UrlShortener.dto;
 
+import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -15,6 +16,7 @@ public record ShortenUrlRequest(
         @Pattern(regexp = "^[a-zA-Z0-9_-]+$")
         String customAlias,
 
+        @Future
         LocalDateTime expiresAt
 ) {
 }

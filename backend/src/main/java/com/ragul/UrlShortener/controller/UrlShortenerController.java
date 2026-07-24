@@ -5,20 +5,20 @@ import com.ragul.UrlShortener.dto.ShortenUrlResponse;
 import com.ragul.UrlShortener.service.RateLimitService;
 import com.ragul.UrlShortener.service.UrlShortenerService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api")
 @Slf4j
 @RequiredArgsConstructor
 public class UrlShortenerController {
@@ -31,7 +31,7 @@ public class UrlShortenerController {
             @Valid @RequestBody ShortenUrlRequest shortenUrlRequest,
             HttpServletRequest httpRequest
     ){
-        String clientIp = getClientIP(httpRequest);
+        String clientIp = getClientIp(httpRequest);
         if(!rateLimitService.isAllowed(clientIp)){
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(
                     Map.of("error", "Rate limit exceeded",
@@ -47,12 +47,36 @@ public class UrlShortenerController {
         catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.error("Unexpected error while shortening URL", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Internal server error"));
         }
     }
 
-    private String getClientIP(HttpServletRequest httpRequest) {
+    @GetMapping("/{shortCode}")
+    public ResponseEntity<Void> redirectToUrl(
+            @PathVariable String shortCode,
+            HttpServletRequest request,
+            HttpServletResponse response
+    ){
+        String clientIp = getClientIp(request);
+        String userAgent = request.getHeader("User-Agent");
+        String referer = request.getHeader("Referer");
+
+        Optional<String> originalUrl = urlShortenerService.getOriginalUrl(shortCode);
+
+        if (originalUrl.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        urlShortenerService.recordClick(shortCode, clientIp, userAgent, referer);
+
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(originalUrl.get()))
+                .build();
+    }
+
+    private String getClientIp(HttpServletRequest httpRequest) {
         String xForwardedFor = httpRequest.getHeader("X-Forwarded-For");
         if(xForwardedFor != null && !xForwardedFor.isBlank()){
             return xForwardedFor.split(",")[0].trim();
