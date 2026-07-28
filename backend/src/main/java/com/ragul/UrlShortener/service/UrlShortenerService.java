@@ -2,6 +2,7 @@ package com.ragul.UrlShortener.service;
 
 import com.ragul.UrlShortener.dto.ShortenUrlRequest;
 import com.ragul.UrlShortener.dto.ShortenUrlResponse;
+import com.ragul.UrlShortener.dto.UrlAnalyticsResponse;
 import com.ragul.UrlShortener.dto.UrlStatsResponse;
 import com.ragul.UrlShortener.model.ClickEvent;
 import com.ragul.UrlShortener.model.UrlData;
@@ -14,10 +15,12 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -181,5 +184,52 @@ public class UrlShortenerService {
                         .isActive(urlData.isActive())
                         .createdBy(urlData.getCreatedBy())
                         .build());
+    }
+
+    public Optional<UrlAnalyticsResponse> getUrlAnalytics(String shortCode) {
+        UrlData urlData = urlMappings.get(shortCode);
+        if(urlData == null){
+            return Optional.empty();
+        }
+
+        List<ClickEvent> clicks = clickAnalytics.getOrDefault(urlData.getShortCode(), new ArrayList<>());
+
+        Map<String, Integer> clicksByReferrer = clicks.stream()
+                .filter(c->c.getReferer() != null)
+                .collect(Collectors.groupingBy(
+                        ClickEvent::getReferer, Collectors.summingInt(e->1)
+                ));
+
+        Map<String, Integer> clicksByHour = clicks.stream()
+                .collect(Collectors.groupingBy(
+                        c->c.getTimestamp().getHour() + ":00",
+                        Collectors.summingInt(e->1)
+                ));
+
+        Map<String, Integer> clicksByDay = clicks.stream()
+                .collect(Collectors.groupingBy(
+                        c->c.getTimestamp().toLocalDate().toString(),
+                        Collectors.summingInt(e->1)
+                ));
+
+        List<ClickEvent> recentClicks = clicks.stream()
+                .sorted((a,b)->b.getTimestamp().compareTo(a.getTimestamp()))
+                .limit(10)
+                .toList();
+
+        return Optional.of(
+                UrlAnalyticsResponse.builder()
+                        .shortCode(shortCode)
+                        .originalUrl(urlData.getOriginalUrl())
+                        .totalClicks(urlData.getClickCount())
+                        .createdAt(urlData.getCreatedAt())
+                        .expiresAt(urlData.getExpiresAt())
+                        .recentClicks(recentClicks)
+                        .clicksByReferrer(clicksByReferrer)
+                        .clicksByHour(clicksByHour)
+                        .clicksByDay(clicksByDay)
+                        .build()
+        );
+
     }
 }
