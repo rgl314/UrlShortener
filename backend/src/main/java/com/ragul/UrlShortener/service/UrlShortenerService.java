@@ -2,6 +2,7 @@ package com.ragul.UrlShortener.service;
 
 import com.ragul.UrlShortener.dto.ShortenUrlRequest;
 import com.ragul.UrlShortener.dto.ShortenUrlResponse;
+import com.ragul.UrlShortener.dto.UrlStatsResponse;
 import com.ragul.UrlShortener.model.ClickEvent;
 import com.ragul.UrlShortener.model.UrlData;
 import lombok.RequiredArgsConstructor;
@@ -166,4 +167,19 @@ public class UrlShortenerService {
         }
     }
 
+    public Optional<UrlStatsResponse> getUrlStats(String shortCode) {
+        UrlData urlData = urlMappings.get(shortCode);
+        if(urlData == null){
+            return Optional.empty();
+        }
+        return Optional.of(UrlStatsResponse.builder()
+                        .shortCode(urlData.getShortCode())
+                        .originalUrl(urlData.getOriginalUrl())
+                        .clickCount(urlData.getClickCount())
+                        .createdAt(urlData.getCreatedAt())
+                        .expiresAt(urlData.getExpiresAt())
+                        .isActive(urlData.isActive())
+                        .createdBy(urlData.getCreatedBy())
+                        .build());
+    }
 }

@@ -2,6 +2,7 @@ package com.ragul.UrlShortener.controller;
 
 import com.ragul.UrlShortener.dto.ShortenUrlRequest;
 import com.ragul.UrlShortener.dto.ShortenUrlResponse;
+import com.ragul.UrlShortener.dto.UrlStatsResponse;
 import com.ragul.UrlShortener.service.RateLimitService;
 import com.ragul.UrlShortener.service.UrlShortenerService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -75,6 +76,20 @@ public class UrlShortenerController {
                 .location(URI.create(originalUrl.get()))
                 .build();
     }
+
+    @GetMapping("/stats/{shortCode}")
+    public ResponseEntity<?> getUrlStats(@PathVariable String shortCode){
+        Optional<UrlStatsResponse> urlStats = urlShortenerService.getUrlStats(shortCode);
+        if(urlStats.isPresent()){
+            return ResponseEntity.ok(urlStats.get());
+        }
+        else{
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "Short code not found"));
+        }
+    }
+
+
 
     private String getClientIp(HttpServletRequest httpRequest) {
         String xForwardedFor = httpRequest.getHeader("X-Forwarded-For");
