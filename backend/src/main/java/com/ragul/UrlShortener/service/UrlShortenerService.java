@@ -1,11 +1,10 @@
 package com.ragul.UrlShortener.service;
 
-import com.ragul.UrlShortener.dto.ShortenUrlRequest;
-import com.ragul.UrlShortener.dto.ShortenUrlResponse;
-import com.ragul.UrlShortener.dto.UrlAnalyticsResponse;
-import com.ragul.UrlShortener.dto.UrlStatsResponse;
+import com.ragul.UrlShortener.dto.*;
 import com.ragul.UrlShortener.model.ClickEvent;
 import com.ragul.UrlShortener.model.UrlData;
+import com.ragul.UrlShortener.repository.ClickEventRepository;
+import com.ragul.UrlShortener.repository.UrlDataRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -28,8 +26,8 @@ import java.util.stream.Collectors;
 public class UrlShortenerService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final ConcurrentHashMap<String, UrlData> urlMappings = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, List<ClickEvent>> clickAnalytics = new ConcurrentHashMap<>();
+    private final UrlDataRepository urlDataRepository;
+    private final ClickEventRepository clickEventRepository;
 
     @Value("${url-shortener.base-url}")
     private String baseUrl;
@@ -53,7 +51,7 @@ public class UrlShortenerService {
         }
         else{
             shortCode = shortCode.trim();
-            if(shortCodeExists(shortCode)){
+            if(urlDataRepository.existsByShortCode(shortCode)){
                 throw new IllegalArgumentException("custom alias already exists: " + shortCode);
             }
         }
@@ -61,17 +59,15 @@ public class UrlShortenerService {
         UrlData urlData = UrlData.builder()
                 .originalUrl(urlRequest.originalUrl())
                 .shortCode(shortCode)
-                .expiresAt(urlRequest.expiresAt())
                 .createdAt(LocalDateTime.now())
+                .expiresAt(urlRequest.expiresAt())
                 .createdBy(clientIp)
                 .clickCount(0)
                 .isActive(true)
                 .clickEvents(new ArrayList<>())
                 .build();
 
-        urlMappings.put(shortCode, urlData);
-        clickAnalytics.put(shortCode, new ArrayList<>());
-
+        urlDataRepository.save(urlData);
         cacheUrl(shortCode, urlRequest.originalUrl());
 
         log.info("Created short URL: {} -> {}", shortCode, urlRequest.originalUrl());
@@ -102,7 +98,7 @@ public class UrlShortenerService {
     private String generateUniqueShortCode() {
         for(int attempt = 0; attempt < maxGenerationAttempts; attempt++){
             String code = generateRandomBase62();
-            if(!shortCodeExists(code)){
+            if(!urlDataRepository.existsByShortCode(code)){
                 return code;
             }
         }
@@ -118,18 +114,16 @@ public class UrlShortenerService {
         return sb.toString();
     }
 
-    private boolean shortCodeExists(String code) {
-        return urlMappings.containsKey(code);
-    }
-
     public Optional<String> getOriginalUrl(String shortCode) {
         String cacheUrl = getCachedUrl(shortCode);
         if (cacheUrl != null) {
             return Optional.of(cacheUrl);
         }
 
-        UrlData urlData = urlMappings.get(shortCode);
-        if(urlData != null && urlData.isActive()){
+        UrlData urlData = urlDataRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+
+        if(urlData != null  && urlData.isActive()){
             if(isExpired(urlData)){
                 urlData.setActive(false);
                 return Optional.empty();
@@ -154,27 +148,31 @@ public class UrlShortenerService {
     }
 
     public void recordClick(String shortCode, String clientIp, String userAgent, String referer) {
-        UrlData urlData = urlMappings.get(shortCode);
+        UrlData urlData = urlDataRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+
         if(urlData != null && urlData.isActive()){
             urlData.setClickCount(urlData.getClickCount() + 1);
 
             ClickEvent clickEvent = ClickEvent.builder()
-                    .timestamp(LocalDateTime.now())
+                    .urlData(urlData)
+                    .clickedAt(LocalDateTime.now())
                     .ipAddress(clientIp)
                     .userAgent(userAgent)
                     .referer(referer)
                     .build();
 
-            clickAnalytics.get(shortCode).add(clickEvent);
+            clickEventRepository.save(clickEvent);
+            urlDataRepository.save(urlData);
+
             log.debug("Recorder click for short code: {}", shortCode);
         }
     }
 
     public Optional<UrlStatsResponse> getUrlStats(String shortCode) {
-        UrlData urlData = urlMappings.get(shortCode);
-        if(urlData == null){
-            return Optional.empty();
-        }
+        UrlData urlData = urlDataRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+
         return Optional.of(UrlStatsResponse.builder()
                         .shortCode(urlData.getShortCode())
                         .originalUrl(urlData.getOriginalUrl())
@@ -187,12 +185,10 @@ public class UrlShortenerService {
     }
 
     public Optional<UrlAnalyticsResponse> getUrlAnalytics(String shortCode) {
-        UrlData urlData = urlMappings.get(shortCode);
-        if(urlData == null){
-            return Optional.empty();
-        }
+        UrlData urlData = urlDataRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
 
-        List<ClickEvent> clicks = clickAnalytics.getOrDefault(urlData.getShortCode(), new ArrayList<>());
+        List<ClickEvent> clicks = clickEventRepository.findAllByUrlData(urlData);
 
         Map<String, Integer> clicksByReferrer = clicks.stream()
                 .filter(c->c.getReferer() != null)
@@ -202,29 +198,41 @@ public class UrlShortenerService {
 
         Map<String, Integer> clicksByHour = clicks.stream()
                 .collect(Collectors.groupingBy(
-                        c->c.getTimestamp().getHour() + ":00",
+                        c->c.getClickedAt().getHour() + ":00",
                         Collectors.summingInt(e->1)
                 ));
 
         Map<String, Integer> clicksByDay = clicks.stream()
                 .collect(Collectors.groupingBy(
-                        c->c.getTimestamp().toLocalDate().toString(),
+                        c->c.getClickedAt().toLocalDate().toString(),
                         Collectors.summingInt(e->1)
                 ));
 
         List<ClickEvent> recentClicks = clicks.stream()
-                .sorted((a,b)->b.getTimestamp().compareTo(a.getTimestamp()))
+                .sorted((a,b)->b.getClickedAt().compareTo(a.getClickedAt()))
                 .limit(10)
                 .toList();
+
+        List<ClickEventResponse> clickEventResponses = recentClicks.stream().map(r ->
+                ClickEventResponse.builder()
+                        .clickedAt(r.getClickedAt())
+                        .ipAddress(r.getIpAddress())
+                        .userAgent(r.getUserAgent())
+                        .referer(r.getReferer())
+                        .city(r.getCity())
+                        .country(r.getCountry())
+                        .build()
+                ).toList();
 
         return Optional.of(
                 UrlAnalyticsResponse.builder()
                         .shortCode(shortCode)
+                        .shortUrl(buildShortUrl(shortCode))
                         .originalUrl(urlData.getOriginalUrl())
                         .totalClicks(urlData.getClickCount())
                         .createdAt(urlData.getCreatedAt())
                         .expiresAt(urlData.getExpiresAt())
-                        .recentClicks(recentClicks)
+                        .recentClicks(clickEventResponses)
                         .clicksByReferrer(clicksByReferrer)
                         .clicksByHour(clicksByHour)
                         .clicksByDay(clicksByDay)
@@ -232,4 +240,5 @@ public class UrlShortenerService {
         );
 
     }
+
 }
