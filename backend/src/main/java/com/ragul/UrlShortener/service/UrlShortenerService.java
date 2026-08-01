@@ -242,7 +242,8 @@ public class UrlShortenerService {
     }
 
     public boolean deleteUrl(String shortCode) {
-        UrlData urlData = urlMappings.get(shortCode);
+        UrlData urlData = urlDataRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
         if(urlData!=null){
             urlData.setActive(false);
             deleteCacheUrl(shortCode);
