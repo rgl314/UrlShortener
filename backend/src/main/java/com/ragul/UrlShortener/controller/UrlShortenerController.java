@@ -102,6 +102,18 @@ public class UrlShortenerController {
         }
     }
 
+    @DeleteMapping("/{shortCode}")
+    public ResponseEntity<?> deleteUrl(@PathVariable String shortCode){
+        boolean deleted = urlShortenerService.deleteUrl(shortCode);
+
+        if(deleted){
+            return ResponseEntity.ok(Map.of("message","URL deleted successfully"));
+        }else{
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error","Short code not found"));
+        }
+    }
+
     private String getClientIp(HttpServletRequest httpRequest) {
         String xForwardedFor = httpRequest.getHeader("X-Forwarded-For");
         if(xForwardedFor != null && !xForwardedFor.isBlank()){
