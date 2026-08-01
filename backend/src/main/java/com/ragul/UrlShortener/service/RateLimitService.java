@@ -1,150 +1,86 @@
 package com.ragul.UrlShortener.service;
 
-import com.ragul.UrlShortener.model.RateLimitData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RateLimitService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
-    @Value("${url-shortener.rate-limit.requests-per-minute}")
-    private int requestPerMinute;
+    @Value("${url-shortener.rate-limit.max-requests-per-minute}")
+    private int maxRequestsPerMinute;
 
-    @Value("${url-shortener.rate-limit.requests-per-hour}")
-    private int requestPerHour;
+    @Value("${url-shortener.rate-limit.max-requests-per-hour}")
+    private int maxRequestsPerHour;
 
-    private static final String REDIS_KEY_PREFIX = "ratelimit:";
+    @Value("${url-shortener.rate-limit.max-minute-window}")
+    private Duration maxMinuteWindow;
 
-    private final ConcurrentHashMap<String, RateLimitData> map = new ConcurrentHashMap<>();
+    @Value("${url-shortener.rate-limit.max-hour-window}")
+    private Duration maxHourWindow;
+
+    private static final String MINUTE_KEY_PREFIX = "ratelimit:minute:";
+    private static final String HOUR_KEY_PREFIX = "ratelimit:hour:";
 
     // to check whether a client(IP address) is allowed to make a request at a current moment
     public boolean isAllowed(String clientIp) {
-        String redisKey = REDIS_KEY_PREFIX + clientIp;
 
-        LocalDateTime currentTime = LocalDateTime.now();
+        String minuteKey = MINUTE_KEY_PREFIX + clientIp;
+        String hourKey = HOUR_KEY_PREFIX + "hour:" + clientIp;
 
-        RateLimitData rateLimitData = getRateLimitDataFromRedis(redisKey);
-
-        // new IP (no data yet)
-        if(rateLimitData == null){
-            rateLimitData = map.computeIfAbsent(redisKey, k -> RateLimitData.builder()
-                    .hourCount(0)
-                    .minuteCount(0)
-                    .hourWindowStart(currentTime)
-                    .minuteWindowStart(currentTime)
-                    .build());
+        Long minuteCount = redisTemplate.opsForValue().increment(minuteKey);
+        if(minuteCount != null && minuteCount == 1L){
+            redisTemplate.expire(minuteKey, maxMinuteWindow);
         }
 
-        // for 1 min client can give only 2 requests
-        if(isWithinMinuteWindow(rateLimitData, currentTime)){
-            if(rateLimitData.getMinuteCount() >= requestPerMinute){
-                log.warn("Minute limit exceeded for {}", clientIp);
-                return false;
-            }
-        }
-        else{
-            rateLimitData.setMinuteCount(0);
-            rateLimitData.setMinuteWindowStart(currentTime);
+        Long hourCount = redisTemplate.opsForValue().increment(hourKey);
+        if(hourCount != null && hourCount == 1L){
+            redisTemplate.expire(hourKey, maxHourWindow);
         }
 
-        // for 1 hour client can give only 10 requests
-        if(isWithinHourWindow(rateLimitData, currentTime)){
-            if(rateLimitData.getHourCount() >= requestPerHour){
-                log.warn("Hour limit exceeded for {}", clientIp);
-                return false;
-            }
-        }
-        else{
-            rateLimitData.setHourCount(0);
-            rateLimitData.setHourWindowStart(currentTime);
+        if(minuteCount != null && minuteCount > maxRequestsPerMinute){
+            log.warn("Minute limit exceeded for {}", clientIp);
+            return false;
         }
 
-        rateLimitData.setMinuteCount(rateLimitData.getMinuteCount() + 1);
-        rateLimitData.setHourCount(rateLimitData.getHourCount() + 1);
-
-        saveRateLimitDataToRedis(redisKey, rateLimitData);
+        if(hourCount != null && hourCount > maxRequestsPerHour){
+            log.warn("Hour limit exceeded for {}", clientIp);
+            return false;
+        }
 
         return true;
     }
 
-    private boolean isWithinHourWindow(RateLimitData rateLimitData, LocalDateTime currentTime) {
-        return rateLimitData.getHourWindowStart() != null &&
-                ChronoUnit.HOURS.between(rateLimitData.getHourWindowStart(), currentTime) < 1;
-    }
-
-    private boolean isWithinMinuteWindow(RateLimitData rateLimitData, LocalDateTime currentTime) {
-        return rateLimitData.getMinuteWindowStart() != null &&
-                ChronoUnit.MINUTES.between(rateLimitData.getMinuteWindowStart(), currentTime) < 1;
-    }
-
-    private void saveRateLimitDataToRedis(String redisKey, RateLimitData rateLimitData) {
-        try{
-            redisTemplate.opsForValue().set(redisKey, rateLimitData, 1, TimeUnit.HOURS);
-        }
-        catch (Exception e){
-            log.warn("Failed to save Rate-limit data to Redis: {}", e.getMessage());
-        }
-    }
-
-    private RateLimitData getRateLimitDataFromRedis(String redisKey) {
-        try{
-            return (RateLimitData) redisTemplate.opsForValue().get(redisKey);
-        }
-        catch (Exception e){
-            log.warn("failed to get Rate-limit data from the redis: {}", e.getMessage());
-            throw new IllegalStateException("Redis is unavailable", e);
-        }
-    }
-
     public int getRemainingRequests(String clientIp) {
-        String redisKey = REDIS_KEY_PREFIX + clientIp;
-        RateLimitData data = getRateLimitDataFromRedis(redisKey);
+        String minuteKey = MINUTE_KEY_PREFIX + clientIp;
+        String minuteCount = redisTemplate.opsForValue().get(minuteKey);
 
-        if(data == null){
-            return requestPerMinute;
+        if(minuteCount == null){
+            return maxRequestsPerMinute;
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        if(!isWithinMinuteWindow(data, now)){
-            return requestPerMinute;
-        }
+        int used = Integer.parseInt(minuteCount);
 
-        return Math.max(0, requestPerMinute - data.getMinuteCount());
+        return Math.max(0, maxRequestsPerMinute - used);
     }
 
     public long getTimeUntilReset(String clientIp) {
-        String redisKey = REDIS_KEY_PREFIX + clientIp;
-        RateLimitData data = getRateLimitDataFromRedis(redisKey);
+        String minuteKey = MINUTE_KEY_PREFIX + clientIp;
 
-        if (data == null) {
+        Long ttl = redisTemplate.getExpire(minuteKey);
+
+        if(ttl == null || ttl < 0){
             return 0;
         }
-
-        LocalDateTime now = LocalDateTime.now();
-        if (data.getMinuteCount() >= requestPerMinute) {
-            LocalDateTime nextMinute = data.getMinuteWindowStart()
-                    .plusMinutes(1);
-            return ChronoUnit.SECONDS.between(now, nextMinute);
-        }
-
-        if (data.getHourCount() >= requestPerHour) {
-            LocalDateTime nextHour = data.getHourWindowStart()
-                    .plusHours(1);
-            return ChronoUnit.SECONDS.between(now, nextHour);
-        }
-
-        return 0;
+        return ttl;
     }
+
 }
