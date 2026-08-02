@@ -42,17 +42,8 @@ public class UrlShortenerController {
                     )
             );
         }
-        try{
-            ShortenUrlResponse response = urlShortenerService.shortenUrl(shortenUrlRequest, clientIp);
-            return ResponseEntity.ok(response);
-        }
-        catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Unexpected error while shortening URL", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Internal server error"));
-        }
+        ShortenUrlResponse response = urlShortenerService.shortenUrl(shortenUrlRequest, clientIp);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{shortCode}")
@@ -79,27 +70,15 @@ public class UrlShortenerController {
     }
 
     @GetMapping("/stats/{shortCode}")
-    public ResponseEntity<?> getUrlStats(@PathVariable String shortCode){
-        Optional<UrlStatsResponse> urlStats = urlShortenerService.getUrlStats(shortCode);
-        if(urlStats.isPresent()){
-            return ResponseEntity.ok(urlStats.get());
-        }
-        else{
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", "Short code not found"));
-        }
+    public ResponseEntity<UrlStatsResponse> getUrlStats(@PathVariable String shortCode){
+        UrlStatsResponse urlStatsResponse = urlShortenerService.getUrlStats(shortCode);
+        return new ResponseEntity<>(urlStatsResponse, HttpStatus.OK);
     }
 
     @GetMapping("/analytics/{shortCode}")
     public ResponseEntity<?> getUrlAnalytics(@PathVariable String shortCode){
-        Optional<UrlAnalyticsResponse> urlAnalytics = urlShortenerService.getUrlAnalytics(shortCode);
-        if(urlAnalytics.isPresent()){
-            return ResponseEntity.ok(urlAnalytics.get());
-        }
-        else{
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", "Short code not found"));
-        }
+        UrlAnalyticsResponse urlAnalytics = urlShortenerService.getUrlAnalytics(shortCode);
+        return new ResponseEntity<>(urlAnalytics, HttpStatus.OK);
     }
 
     @DeleteMapping("/{shortCode}")

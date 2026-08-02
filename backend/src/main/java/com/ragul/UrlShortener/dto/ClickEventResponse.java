@@ -4,11 +4,8 @@ import lombok.*;
 
 import java.time.LocalDateTime;
 
-@Setter
 @Getter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class ClickEventResponse {
 
     private LocalDateTime clickedAt;

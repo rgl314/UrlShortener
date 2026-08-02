@@ -6,8 +6,6 @@ import java.time.LocalDateTime;
 
 @Builder
 @Getter
-@AllArgsConstructor
-@NoArgsConstructor
 public class ShortenUrlResponse {
 
     private String shortUrl;

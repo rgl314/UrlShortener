@@ -2,6 +2,9 @@ package com.ragul.UrlShortener.service;
 
 import com.ragul.UrlShortener.config.UrlShortenerConfig;
 import com.ragul.UrlShortener.dto.*;
+import com.ragul.UrlShortener.exception.DuplicateAliasException;
+import com.ragul.UrlShortener.exception.RateLimitExceededException;
+import com.ragul.UrlShortener.exception.UrlDataNotFound;
 import com.ragul.UrlShortener.model.ClickEvent;
 import com.ragul.UrlShortener.model.UrlData;
 import com.ragul.UrlShortener.repository.ClickEventRepository;
@@ -42,7 +45,7 @@ public class UrlShortenerService {
         else{
             shortCode = shortCode.trim();
             if(urlDataRepository.existsByShortCode(shortCode)){
-                throw new IllegalArgumentException("custom alias already exists: " + shortCode);
+                throw new DuplicateAliasException("custom alias already exists: " + shortCode);
             }
         }
 
@@ -95,7 +98,7 @@ public class UrlShortenerService {
                 return code;
             }
         }
-        throw new RuntimeException("Failed to generate unique short code after " + urlShortenerConfig.getShortCode().getMaxAttempts());
+        throw new RateLimitExceededException("Failed to generate unique short code after " + urlShortenerConfig.getShortCode().getMaxAttempts());
     }
 
     private String generateRandomBase62() {
@@ -114,7 +117,7 @@ public class UrlShortenerService {
         }
 
         UrlData urlData = urlDataRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+                .orElseThrow(() -> new UrlDataNotFound("Url Data does not exists!"));
 
         if(urlData != null  && urlData.isActive()){
             if(isExpired(urlData)){
@@ -142,7 +145,7 @@ public class UrlShortenerService {
 
     public void recordClick(String shortCode, String clientIp, String userAgent, String referer) {
         UrlData urlData = urlDataRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+                .orElseThrow(() -> new UrlDataNotFound("Url Data does not exists!"));
 
         if(urlData != null && urlData.isActive()){
             urlData.setClickCount(urlData.getClickCount() + 1);
@@ -162,11 +165,11 @@ public class UrlShortenerService {
         }
     }
 
-    public Optional<UrlStatsResponse> getUrlStats(String shortCode) {
+    public UrlStatsResponse getUrlStats(String shortCode) {
         UrlData urlData = urlDataRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+                .orElseThrow(() -> new UrlDataNotFound("Url Data does not exists!"));
 
-        return Optional.of(UrlStatsResponse.builder()
+        return UrlStatsResponse.builder()
                         .shortCode(urlData.getShortCode())
                         .originalUrl(urlData.getOriginalUrl())
                         .clickCount(urlData.getClickCount())
@@ -174,12 +177,12 @@ public class UrlShortenerService {
                         .expiresAt(urlData.getExpiresAt())
                         .isActive(urlData.isActive())
                         .createdBy(urlData.getCreatedBy())
-                        .build());
+                        .build();
     }
 
-    public Optional<UrlAnalyticsResponse> getUrlAnalytics(String shortCode) {
+    public UrlAnalyticsResponse getUrlAnalytics(String shortCode) {
         UrlData urlData = urlDataRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+                .orElseThrow(() -> new UrlDataNotFound("Url Data does not exists!"));
 
         List<ClickEvent> clicks = clickEventRepository.findAllByUrlData(urlData);
 
@@ -217,8 +220,7 @@ public class UrlShortenerService {
                         .build()
                 ).toList();
 
-        return Optional.of(
-                UrlAnalyticsResponse.builder()
+        return UrlAnalyticsResponse.builder()
                         .shortCode(shortCode)
                         .shortUrl(buildShortUrl(shortCode))
                         .originalUrl(urlData.getOriginalUrl())
@@ -229,14 +231,13 @@ public class UrlShortenerService {
                         .clicksByReferrer(clicksByReferrer)
                         .clicksByHour(clicksByHour)
                         .clicksByDay(clicksByDay)
-                        .build()
-        );
+                        .build();
 
     }
 
     public boolean deleteUrl(String shortCode) {
         UrlData urlData = urlDataRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
+                .orElseThrow(() -> new UrlDataNotFound("Url Data does not exists!"));
         if(urlData!=null){
             urlData.setActive(false);
             urlDataRepository.save(urlData);
