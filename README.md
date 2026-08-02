@@ -219,6 +219,8 @@ Configure your environment variables:
 DB_URL=jdbc:mysql://localhost:3306/url_shortener
 DB_USERNAME=root
 DB_PASSWORD=password
+REDIS_HOST=localhost
+REDIS_PORT=6379
 ```
 
 > Never commit your `.env` file. Use `.env.example` instead.
@@ -252,8 +254,8 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
       timeout: 2000ms
 
 url-shortener:
