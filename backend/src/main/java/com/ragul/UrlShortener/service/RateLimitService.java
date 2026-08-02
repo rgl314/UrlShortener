@@ -1,5 +1,6 @@
 package com.ragul.UrlShortener.service;
 
+import com.ragul.UrlShortener.config.UrlShortenerConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,18 +15,7 @@ import java.time.Duration;
 public class RateLimitService {
 
     private final StringRedisTemplate redisTemplate;
-
-    @Value("${url-shortener.rate-limit.max-requests-per-minute}")
-    private int maxRequestsPerMinute;
-
-    @Value("${url-shortener.rate-limit.max-requests-per-hour}")
-    private int maxRequestsPerHour;
-
-    @Value("${url-shortener.rate-limit.max-minute-window}")
-    private Duration maxMinuteWindow;
-
-    @Value("${url-shortener.rate-limit.max-hour-window}")
-    private Duration maxHourWindow;
+    private final UrlShortenerConfig urlShortenerConfig;
 
     private static final String MINUTE_KEY_PREFIX = "ratelimit:minute:";
     private static final String HOUR_KEY_PREFIX = "ratelimit:hour:";
@@ -38,20 +28,20 @@ public class RateLimitService {
 
         Long minuteCount = redisTemplate.opsForValue().increment(minuteKey);
         if(minuteCount != null && minuteCount == 1L){
-            redisTemplate.expire(minuteKey, maxMinuteWindow);
+            redisTemplate.expire(minuteKey, urlShortenerConfig.getRateLimit().getMaxMinuteWindow());
         }
 
         Long hourCount = redisTemplate.opsForValue().increment(hourKey);
         if(hourCount != null && hourCount == 1L){
-            redisTemplate.expire(hourKey, maxHourWindow);
+            redisTemplate.expire(hourKey, urlShortenerConfig.getRateLimit().getMaxHourWindow());
         }
 
-        if(minuteCount != null && minuteCount > maxRequestsPerMinute){
+        if(minuteCount != null && minuteCount > urlShortenerConfig.getRateLimit().getMaxRequestsPerMinute()){
             log.warn("Minute limit exceeded for {}", clientIp);
             return false;
         }
 
-        if(hourCount != null && hourCount > maxRequestsPerHour){
+        if(hourCount != null && hourCount > urlShortenerConfig.getRateLimit().getMaxRequestsPerHour()){
             log.warn("Hour limit exceeded for {}", clientIp);
             return false;
         }
@@ -64,12 +54,12 @@ public class RateLimitService {
         String minuteCount = redisTemplate.opsForValue().get(minuteKey);
 
         if(minuteCount == null){
-            return maxRequestsPerMinute;
+            return urlShortenerConfig.getRateLimit().getMaxRequestsPerMinute();
         }
 
         int used = Integer.parseInt(minuteCount);
 
-        return Math.max(0, maxRequestsPerMinute - used);
+        return Math.max(0, urlShortenerConfig.getRateLimit().getMaxRequestsPerMinute() - used);
     }
 
     public long getTimeUntilReset(String clientIp) {

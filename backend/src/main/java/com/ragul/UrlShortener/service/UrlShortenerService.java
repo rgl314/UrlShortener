@@ -1,5 +1,6 @@
 package com.ragul.UrlShortener.service;
 
+import com.ragul.UrlShortener.config.UrlShortenerConfig;
 import com.ragul.UrlShortener.dto.*;
 import com.ragul.UrlShortener.model.ClickEvent;
 import com.ragul.UrlShortener.model.UrlData;
@@ -28,18 +29,7 @@ public class UrlShortenerService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final UrlDataRepository urlDataRepository;
     private final ClickEventRepository clickEventRepository;
-
-    @Value("${url-shortener.base-url}")
-    private String baseUrl;
-
-    @Value("${url-shortener.short-code.length}")
-    private int shortCodeLength;
-
-    @Value("${url-shortener.short-code.max-attempts}")
-    private int maxGenerationAttempts;
-
-    @Value("${url-shortener.cache.ttl-minutes}")
-    private int cacheTtlMinutes;
+    private final UrlShortenerConfig urlShortenerConfig;
 
     private static final String BASE_62_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHILJKLMNOPQRSTUVWXYZ";
 
@@ -82,13 +72,16 @@ public class UrlShortenerService {
     }
 
     private String buildShortUrl(String shortCode) {
-        String normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        String normalizedBaseUrl = urlShortenerConfig.getBaseUrl().endsWith("/") ?
+                urlShortenerConfig.getBaseUrl().substring(0, urlShortenerConfig.getBaseUrl().length() - 1) :
+                urlShortenerConfig.getBaseUrl();
+
         return normalizedBaseUrl + "/api/" + shortCode;
     }
 
     private void cacheUrl(String shortCode, String originalUrl) {
         try{
-            redisTemplate.opsForValue().set("url:" + shortCode, originalUrl, cacheTtlMinutes, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().set("url:" + shortCode, originalUrl, urlShortenerConfig.getCache().getTtlMinutes(), TimeUnit.MINUTES);
         }
         catch (Exception e){
             log.warn("Failed to cache URL for  {}:{}", shortCode, e.getMessage());
@@ -96,18 +89,18 @@ public class UrlShortenerService {
     }
 
     private String generateUniqueShortCode() {
-        for(int attempt = 0; attempt < maxGenerationAttempts; attempt++){
+        for(int attempt = 0; attempt < urlShortenerConfig.getShortCode().getMaxAttempts(); attempt++){
             String code = generateRandomBase62();
             if(!urlDataRepository.existsByShortCode(code)){
                 return code;
             }
         }
-        throw new RuntimeException("Failed to generate unique short code after " + maxGenerationAttempts);
+        throw new RuntimeException("Failed to generate unique short code after " + urlShortenerConfig.getShortCode().getMaxAttempts());
     }
 
     private String generateRandomBase62() {
-        StringBuilder sb = new StringBuilder(shortCodeLength);
-        for(int i=0;i<shortCodeLength;i++){
+        StringBuilder sb = new StringBuilder(urlShortenerConfig.getShortCode().getLength());
+        for(int i=0;i<urlShortenerConfig.getShortCode().getLength();i++){
             int index = ThreadLocalRandom.current().nextInt(BASE_62_CHARS.length());
             sb.append(BASE_62_CHARS.charAt(index));
         }
@@ -246,6 +239,7 @@ public class UrlShortenerService {
                 .orElseThrow(() -> new RuntimeException("Url Data does not exists!"));
         if(urlData!=null){
             urlData.setActive(false);
+            urlDataRepository.save(urlData);
             deleteCacheUrl(shortCode);
             log.info("Deleted URL: {}",shortCode);
             return true;
