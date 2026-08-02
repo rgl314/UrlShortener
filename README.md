@@ -40,23 +40,7 @@ The goal of this project is to showcase backend engineering practices commonly u
 
 ---
 
-# 🏗️ System Architecture
-
-> Replace this placeholder with your architecture diagram.
-
-<p align="center">
-
-**📷 Architecture Diagram**
-
-```
-docs/images/architecture.png
-```
-
-</p>
-
----
-
-# 🔄 Application Flow
+# 🏗️ Application Flow
 
 ## Main flow
 
